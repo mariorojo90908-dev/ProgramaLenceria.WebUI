@@ -1,0 +1,74 @@
+﻿<div class="top-row ps-3 navbar navbar-dark bg-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand fw-bold" href="">
+            <i class="bi bi-gem me-2 text-primary"></i>Gestión Lencería
+        </a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="flex-column">
+
+        <!-- DASHBOARD / PRINCIPAL -->
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-grid-1x2-fill-nav-menu" aria-hidden="true"></span> Panel Principal
+            </NavLink>
+        </div>
+
+        <hr class="text-secondary mx-3 my-2" />
+        <div class="text-uppercase text-muted px-3 small fw-bold" style="font-size: 0.72rem;">Operaciones</div>
+
+        <!-- VENTAS (COBRO) -->
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="ventas">
+                <span class="bi bi-bag-check-fill-nav-menu" aria-hidden="true"></span> Ventas (Cobro)
+            </NavLink>
+        </div>
+
+        <!-- COMPRAS (INGRESO) -->
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="compras">
+                <span class="bi bi-cart-plus-fill-nav-menu" aria-hidden="true"></span> Compras (Ingreso)
+            </NavLink>
+        </div>
+
+        <hr class="text-secondary mx-3 my-2" />
+        <div class="text-uppercase text-muted px-3 small fw-bold" style="font-size: 0.72rem;">Catálogo & Contactos</div>
+
+        <!-- CATÁLOGO -->
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="productos">
+                <span class="bi bi-box-seam-fill-nav-menu" aria-hidden="true"></span> Productos & Stock
+            </NavLink>
+        </div>
+
+        <!-- CLIENTES -->
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="clientes">
+                <span class="bi bi-people-nav-menu" aria-hidden="true"></span> Clientes
+            </NavLink>
+        </div>
+
+        <!-- PROVEEDORES -->
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="proveedores">
+                <span class="bi bi-truck-nav-menu" aria-hidden="true"></span> Proveedores
+            </NavLink>
+        </div>
+
+        <hr class="text-secondary mx-3 my-2" />
+        <div class="text-uppercase text-muted px-3 small fw-bold" style="font-size: 0.72rem;">Análisis & Informes</div>
+
+        <!-- REPORTES & BALANCES -->
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="reportes">
+                <span class="bi bi-bar-chart-line-fill-nav-menu" aria-hidden="true"></span> Reportes & Balances
+            </NavLink>
+        </div>
+
+    </nav>
+</div>
+

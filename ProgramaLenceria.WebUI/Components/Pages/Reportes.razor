@@ -1,0 +1,409 @@
+﻿@page "/reportes"
+@using System.Text
+@using ProgramaLenceria.Application.Common.Interfaces
+@using ProgramaLenceria.Domain.Entities
+@inject IVentaService VentaService
+@inject ICompraService CompraService
+@inject IProductoService ProductoService
+@inject IBackupService BackupService
+@inject IJSRuntime JS
+@rendermode InteractiveServer
+
+<PageTitle>Reportes & Balances - Lencería</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="fw-bold mb-0">Reportes & Balances</h2>
+        <small class="text-muted">Análisis comercial, flujo de fondos y descarga de planillas</small>
+    </div>
+    <div class="position-relative">
+        <button class="btn btn-success dropdown-toggle shadow-sm" type="button" @onclick="ToggleMenuExportar">
+            <i class="bi bi-file-earmark-excel me-1"></i> Exportar a Excel (CSV)
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end shadow @(menuExportarAbierto ? "show d-block" : "")" style="right: 0; left: auto; position: absolute;">
+            <li>
+                <button class="dropdown-item" @onclick="ExportarVentasCsv">
+                    <i class="bi bi-bag-check me-2 text-primary"></i>Ventas Filtradas
+                </button>
+            </li>
+            <li>
+                <button class="dropdown-item" @onclick="ExportarComprasCsv">
+                    <i class="bi bi-cart-plus me-2 text-danger"></i>Compras Filtradas
+                </button>
+            </li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+                <button class="dropdown-item" @onclick="ExportarStockCsv">
+                    <i class="bi bi-box-seam me-2 text-success"></i>Inventario y Stock Completo
+                </button>
+            </li>
+        </ul>
+    </div>
+</div>
+
+<!-- PANEL DE RESPALDO POR EMAIL (RESEND) -->
+<div class="card shadow-sm border-0 rounded-4 p-3 mb-4 bg-white border-start border-4 border-info">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+        <div>
+            <h6 class="fw-bold mb-1 text-dark">
+                <i class="bi bi-envelope-arrow-up me-1 text-info"></i> Respaldo Automático al Correo
+            </h6>
+            <p class="text-muted small mb-0">
+                Genera las planillas CSV consolidadas de Stock y Ventas y las despacha directo a tu casilla configurada.
+            </p>
+        </div>
+        <button class="btn btn-primary fw-semibold px-4 py-2 d-flex align-items-center justify-content-center gap-2 shadow-sm"
+                @onclick="EnviarPlanillasPorCorreo"
+                disabled="@enviandoMail">
+            @if (enviandoMail)
+            {
+                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                <span>Enviando...</span>
+            }
+            else
+            {
+                <i class="bi bi-send-fill"></i>
+                <span>Enviar Reporte a mi Mail</span>
+            }
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(mensajeEmail))
+    {
+        <div class="alert @(huboErrorEmail ? "alert-danger" : "alert-success") alert-dismissible fade show mt-3 mb-0 py-2 small" role="alert">
+            @mensajeEmail
+        </div>
+    }
+</div>
+
+<!-- FILTROS DE FECHA -->
+<div class="card shadow-sm border-0 mb-4 bg-light">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label fw-bold small">Fecha Desde</label>
+                <input type="date" class="form-control" @bind="fechaDesde" />
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-bold small">Fecha Hasta</label>
+                <input type="date" class="form-control" @bind="fechaHasta" />
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-primary w-100" @onclick="CargarReportes">
+                    <i class="bi bi-funnel me-1"></i> Filtrar Período
+                </button>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-outline-secondary w-100" @onclick="SetMesActual">
+                    Mes Actual
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (cargando)
+{
+    <div class="d-flex justify-content-center my-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Cargando...</span>
+        </div>
+    </div>
+}
+else
+{
+    <!-- TARJETAS DE BALANCES -->
+    <div class="row g-3 mb-4">
+        <!-- Ingresos por Ventas -->
+        <div class="col-md-4">
+            <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+                <div class="card-body">
+                    <span class="text-muted text-uppercase fw-semibold small">Ingresos (Ventas)</span>
+                    <h3 class="fw-bold text-primary my-2">$@totalVentas.ToString("N2")</h3>
+                    <small class="text-muted">@ventasFiltradas.Count venta(s) en el período</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Egresos por Compras -->
+        <div class="col-md-4">
+            <div class="card shadow-sm border-0 border-start border-danger border-4 h-100">
+                <div class="card-body">
+                    <span class="text-muted text-uppercase fw-semibold small">Egresos (Compras)</span>
+                    <h3 class="fw-bold text-danger my-2">$@totalCompras.ToString("N2")</h3>
+                    <small class="text-muted">@comprasFiltradas.Count factura(s) de compra</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Balance Neto -->
+        <div class="col-md-4">
+            <div class="card shadow-sm border-0 border-start @(balanceNeto >= 0 ? "border-success bg-success-subtle" : "border-danger bg-danger-subtle") border-4 h-100">
+                <div class="card-body">
+                    <span class="text-muted text-uppercase fw-semibold small">Balance Neto (Caja)</span>
+                    <h3 class="fw-bold @(balanceNeto >= 0 ? "text-success" : "text-danger") my-2">
+                        $@balanceNeto.ToString("N2")
+                    </h3>
+                    <small class="text-muted">Diferencia entre Ingresos y Egresos</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECCIONES DE DETALLE -->
+    <div class="row g-4">
+        <!-- TABLA VENTAS -->
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0 text-primary">
+                        <i class="bi bi-bag-check me-1"></i> Ventas del Período
+                    </h5>
+                    <span class="badge bg-primary">@ventasFiltradas.Count ticket(s)</span>
+                </div>
+                <div class="card-body p-0">
+                    @if (!ventasFiltradas.Any())
+                    {
+                        <div class="p-4 text-center text-muted">No hubo ventas en este rango de fechas.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                            <table class="table table-hover align-middle mb-0" style="font-size: 0.88rem;">
+                                <thead class="table-light text-muted sticky-top">
+                                    <tr>
+                                        <th class="ps-3">Fecha</th>
+                                        <th>Cliente</th>
+                                        <th>Medio Pago</th>
+                                        <th class="text-end pe-3">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var v in ventasFiltradas)
+                                    {
+                                        <tr>
+                                            <td class="ps-3">@v.Fecha.ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td>@(v.Cliente != null ? v.Cliente.Nombre : "Consumidor Final")</td>
+                                            <td><span class="badge bg-light text-dark border">@v.MedioPago</span></td>
+                                            <td class="text-end pe-3 fw-bold text-success">$@v.Total.ToString("N2")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- TABLA COMPRAS -->
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0 text-danger">
+                        <i class="bi bi-cart-plus me-1"></i> Compras del Período
+                    </h5>
+                    <span class="badge bg-danger">@comprasFiltradas.Count factura(s)</span>
+                </div>
+                <div class="card-body p-0">
+                    @if (!comprasFiltradas.Any())
+                    {
+                        <div class="p-4 text-center text-muted">No hubo compras en este rango de fechas.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                            <table class="table table-hover align-middle mb-0" style="font-size: 0.88rem;">
+                                <thead class="table-light text-muted sticky-top">
+                                    <tr>
+                                        <th class="ps-3">Fecha</th>
+                                        <th>Proveedor</th>
+                                        <th>Comprobante</th>
+                                        <th class="text-end pe-3">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var c in comprasFiltradas)
+                                    {
+                                        <tr>
+                                            <td class="ps-3">@c.Fecha.ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td>@(c.Proveedor != null ? c.Proveedor.RazonSocial : "Proveedor")</td>
+                                            <td>@(string.IsNullOrWhiteSpace(c.NumeroComprobante) ? "-" : c.NumeroComprobante)</td>
+                                            <td class="text-end pe-3 fw-bold text-danger">$@c.Total.ToString("N2")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool cargando = true;
+    private bool menuExportarAbierto = false;
+    private DateTime fechaDesde = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime fechaHasta = DateTime.Today;
+
+    private List<Venta> todasLasVentas = new();
+    private List<Compra> todasLasCompras = new();
+    private List<Producto> todosLosProductos = new();
+
+    private List<Venta> ventasFiltradas = new();
+    private List<Compra> comprasFiltradas = new();
+
+    private decimal totalVentas = 0;
+    private decimal totalCompras = 0;
+    private decimal balanceNeto = 0;
+
+    // Estados para el envío por correo
+    private bool enviandoMail = false;
+    private bool huboErrorEmail = false;
+    private string mensajeEmail = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        todasLasVentas = (await VentaService.ObtenerTodasAsync()).ToList();
+        todasLasCompras = (await CompraService.ObtenerTodasAsync()).ToList();
+        todosLosProductos = (await ProductoService.ObtenerTodosAsync()).ToList();
+
+        CargarReportes();
+    }
+
+    private void ToggleMenuExportar()
+    {
+        menuExportarAbierto = !menuExportarAbierto;
+    }
+
+    private void SetMesActual()
+    {
+        fechaDesde = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        fechaHasta = DateTime.Today;
+        CargarReportes();
+    }
+
+    private void CargarReportes()
+    {
+        cargando = true;
+
+        var hastaFinalDia = fechaHasta.Date.AddDays(1).AddTicks(-1);
+
+        ventasFiltradas = todasLasVentas
+            .Where(v => v.Fecha >= fechaDesde.Date && v.Fecha <= hastaFinalDia)
+            .OrderByDescending(v => v.Fecha)
+            .ToList();
+
+        comprasFiltradas = todasLasCompras
+            .Where(c => c.Fecha >= fechaDesde.Date && c.Fecha <= hastaFinalDia)
+            .OrderByDescending(c => c.Fecha)
+            .ToList();
+
+        totalVentas = ventasFiltradas.Sum(v => v.Total);
+        totalCompras = comprasFiltradas.Sum(c => c.Total);
+        balanceNeto = totalVentas - totalCompras;
+
+        cargando = false;
+    }
+
+    // ACCIÓN DE ENVÍO POR RESEND
+    private async Task EnviarPlanillasPorCorreo()
+    {
+        try
+        {
+            enviandoMail = true;
+            huboErrorEmail = false;
+            mensajeEmail = string.Empty;
+
+            await BackupService.EnviarCsvPorCorreoAsync();
+
+            mensajeEmail = "¡Planillas CSV enviadas con éxito! Revisá tu casilla de correo.";
+        }
+        catch (Exception ex)
+        {
+            huboErrorEmail = true;
+            mensajeEmail = $"Error al enviar correo: {ex.Message}";
+        }
+        finally
+        {
+            enviandoMail = false;
+        }
+    }
+
+    // EXPORTACIÓN DIRECTA A CSV
+    private async Task ExportarVentasCsv()
+    {
+        menuExportarAbierto = false;
+        var sb = new StringBuilder();
+        sb.AppendLine("ID Venta;Fecha;Cliente;Medio de Pago;Prenda / Variante;Cantidad;Precio Unitario;Subtotal;Total Venta;Observaciones");
+
+        foreach (var v in ventasFiltradas)
+        {
+            var cliente = v.Cliente != null ? v.Cliente.Nombre.Replace(";", " ") : "Consumidor Final";
+            var obs = string.IsNullOrWhiteSpace(v.Observaciones) ? "" : v.Observaciones.Replace(";", " ");
+
+            foreach (var d in v.Detalles)
+            {
+                var prenda = d.VarianteProducto?.Producto != null
+                    ? $"[{d.VarianteProducto.Producto.Marca}] {d.VarianteProducto.Producto.Nombre} (Talle: {d.VarianteProducto.Talle} - Col: {d.VarianteProducto.Color})".Replace(";", " ")
+                    : "Prenda";
+
+                sb.AppendLine($"{v.Id};{v.Fecha:dd/MM/yyyy HH:mm};{cliente};{v.MedioPago};{prenda};{d.Cantidad};{d.PrecioUnitarioVenta:N2};{d.Subtotal:N2};{v.Total:N2};{obs}");
+            }
+        }
+
+        await DescargarArchivo($"Ventas_{fechaDesde:ddMMyyyy}_{fechaHasta:ddMMyyyy}.csv", sb.ToString());
+    }
+
+    private async Task ExportarComprasCsv()
+    {
+        menuExportarAbierto = false;
+        var sb = new StringBuilder();
+        sb.AppendLine("ID Compra;Fecha;Proveedor;Nro Comprobante;Prenda / Variante;Cantidad;Costo Unitario;Subtotal;Total Compra;Observaciones");
+
+        foreach (var c in comprasFiltradas)
+        {
+            var prov = c.Proveedor != null ? c.Proveedor.RazonSocial.Replace(";", " ") : "Proveedor";
+            var comp = string.IsNullOrWhiteSpace(c.NumeroComprobante) ? "" : c.NumeroComprobante.Replace(";", " ");
+            var obs = string.IsNullOrWhiteSpace(c.Observaciones) ? "" : c.Observaciones.Replace(";", " ");
+
+            foreach (var d in c.Detalles)
+            {
+                var prenda = d.VarianteProducto?.Producto != null
+                    ? $"[{d.VarianteProducto.Producto.Marca}] {d.VarianteProducto.Producto.Nombre} (Talle: {d.VarianteProducto.Talle} - Col: {d.VarianteProducto.Color})".Replace(";", " ")
+                    : "Prenda";
+
+                sb.AppendLine($"{c.Id};{c.Fecha:dd/MM/yyyy HH:mm};{prov};{comp};{prenda};{d.Cantidad};{d.PrecioCostoUnitario:N2};{d.Subtotal:N2};{c.Total:N2};{obs}");
+            }
+        }
+
+        await DescargarArchivo($"Compras_{fechaDesde:ddMMyyyy}_{fechaHasta:ddMMyyyy}.csv", sb.ToString());
+    }
+
+    private async Task ExportarStockCsv()
+    {
+        menuExportarAbierto = false;
+        var sb = new StringBuilder();
+        sb.AppendLine("Categoría;Temporada;Marca;Producto;Talle;Color;Stock Actual;Stock Mínimo;Precio Costo;Precio Venta;Valorización Total");
+
+        foreach (var prod in todosLosProductos)
+        {
+            foreach (var v in prod.Variantes)
+            {
+                var valorizacion = v.StockActual * v.Precio;
+                sb.AppendLine($"{prod.Categoria};{prod.Temporada};{prod.Marca};{prod.Nombre};{v.Talle};{v.Color};{v.StockActual};{v.StockMinimo};{v.PrecioCosto:N2};{v.Precio:N2};{valorizacion:N2}");
+            }
+        }
+
+        await DescargarArchivo($"Inventario_Stock_{DateTime.Now:ddMMyyyy_HHmm}.csv", sb.ToString());
+    }
+
+    private async Task DescargarArchivo(string nombreArchivo, string contenido)
+    {
+        var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(contenido)).ToArray();
+        var base64 = Convert.ToBase64String(bytes);
+        await JS.InvokeVoidAsync("descargarArchivoCsv", nombreArchivo, base64);
+    }
+}

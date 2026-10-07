@@ -1,0 +1,213 @@
+﻿@page "/proveedores"
+@using ProgramaLenceria.Application.Common.Interfaces
+@using ProgramaLenceria.Domain.Entities
+@inject IProveedorService ProveedorService
+@rendermode InteractiveServer
+
+<PageTitle>Proveedores - Lencería</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3>Gestión de Proveedores</h3>
+    <button class="btn btn-success" @onclick="AbrirModalNuevo">
+        <i class="bi bi-plus-circle"></i> + Nuevo Proveedor
+    </button>
+</div>
+
+@if (proveedores == null)
+{
+    <p><em>Cargando proveedores...</em></p>
+}
+else if (!proveedores.Any())
+{
+    <div class="alert alert-info">No hay proveedores registrados en el sistema.</div>
+}
+else
+{
+    <table class="table table-striped table-hover align-middle">
+        <thead class="table-dark">
+            <tr>
+                <th>Razón Social</th>
+                <th>Contacto</th>
+                <th>Teléfono</th>
+                <th>Email</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in proveedores)
+            {
+                <tr>
+                    <td><strong>@p.RazonSocial</strong></td>
+                    <td>@(p.ContactoNombre ?? "-")</td>
+                    <td>@(p.Telefono ?? "-")</td>
+                    <td>@(p.Email ?? "-")</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => AbrirModalEditar(p)">Editar</button>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="() => AbrirModalConfirmarEliminar(p)">Eliminar</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@* ------------------- MODAL CREAR / EDITAR ------------------- *@
+@if (mostrarModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title">@(esEdicion ? "Editar Proveedor" : "Nuevo Proveedor")</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CerrarModal"></button>
+                </div>
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(mensajeError))
+                    {
+                        <div class="alert alert-danger">@mensajeError</div>
+                    }
+                    <div class="mb-3">
+                        <label class="form-label font-weight-bold">Razón Social / Nombre Comercial</label>
+                        <input type="text" class="form-control" @bind="proveedorActual.RazonSocial" placeholder="Ej: Textil Lencería S.A." />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Nombre de Contacto</label>
+                        <input type="text" class="form-control" @bind="proveedorActual.ContactoNombre" placeholder="Ej: Maria Gomez" />
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Teléfono</label>
+                            <input type="text" class="form-control" @bind="proveedorActual.Telefono" placeholder="Ej: 11 1234-5678" />
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" @bind="proveedorActual.Email" placeholder="ejemplo@ventas.com" />
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Dirección</label>
+                        <input type="text" class="form-control" @bind="proveedorActual.Direccion" placeholder="Ej: Av. Corrientes 1234" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notas / Observaciones</label>
+                        <textarea class="form-control" @bind="proveedorActual.Notas" rows="2" placeholder="Insumos principales, días de entrega..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CerrarModal">Cancelar</button>
+                    <button type="button" class="btn btn-success" @onclick="GuardarProveedor">
+                        @(esEdicion ? "Guardar Cambios" : "Guardar Proveedor")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ------------------- MODAL CONFIRMAR ELIMINAR ------------------- *@
+@if (mostrarModalEliminar && proveedorAEliminar != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Confirmar Eliminación</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CerrarModalEliminar"></button>
+                </div>
+                <div class="modal-body">
+                    <p>¿Estás seguro de que deseas eliminar al proveedor <strong>@proveedorAEliminar.RazonSocial</strong>?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CerrarModalEliminar">Cancelar</button>
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmarEliminacion">Eliminar Definitivamente</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IEnumerable<Proveedor>? proveedores;
+    private bool mostrarModal = false;
+    private bool esEdicion = false;
+    private string mensajeError = string.Empty;
+    private Proveedor proveedorActual = new();
+
+    private bool mostrarModalEliminar = false;
+    private Proveedor? proveedorAEliminar;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarProveedores();
+    }
+
+    private async Task CargarProveedores()
+    {
+        proveedores = await ProveedorService.ObtenerTodosAsync();
+    }
+
+    private void AbrirModalNuevo()
+    {
+        mensajeError = string.Empty;
+        esEdicion = false;
+        proveedorActual = new Proveedor();
+        mostrarModal = true;
+    }
+
+    private void AbrirModalEditar(Proveedor p)
+    {
+        mensajeError = string.Empty;
+        esEdicion = true;
+        proveedorActual = new Proveedor
+            {
+                Id = p.Id,
+                RazonSocial = p.RazonSocial,
+                ContactoNombre = p.ContactoNombre,
+                Telefono = p.Telefono,
+                Email = p.Email,
+                Direccion = p.Direccion,
+                Notas = p.Notas
+            };
+        mostrarModal = true;
+    }
+
+    private void CerrarModal() => mostrarModal = false;
+
+    private async Task GuardarProveedor()
+    {
+        try
+        {
+            mensajeError = string.Empty;
+            if (esEdicion)
+                await ProveedorService.ActualizarProveedorAsync(proveedorActual);
+            else
+                await ProveedorService.CrearProveedorAsync(proveedorActual);
+
+            mostrarModal = false;
+            await CargarProveedores();
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ex.Message;
+        }
+    }
+
+    private void AbrirModalConfirmarEliminar(Proveedor p)
+    {
+        proveedorAEliminar = p;
+        mostrarModalEliminar = true;
+    }
+
+    private void CerrarModalEliminar() => mostrarModalEliminar = false;
+
+    private async Task ConfirmarEliminacion()
+    {
+        if (proveedorAEliminar != null)
+        {
+            await ProveedorService.EliminarProveedorAsync(proveedorAEliminar.Id);
+            mostrarModalEliminar = false;
+            proveedorAEliminar = null;
+            await CargarProveedores();
+        }
+    }
+}

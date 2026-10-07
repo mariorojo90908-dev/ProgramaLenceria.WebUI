@@ -1,0 +1,495 @@
+﻿@page "/ventas"
+@using ProgramaLenceria.Application.Common.Interfaces
+@using ProgramaLenceria.Domain.Entities
+@inject IVentaService VentaService
+@inject IClienteService ClienteService
+@inject IProductoService ProductoService
+@rendermode InteractiveServer
+
+<PageTitle>Ventas Móvil - Feria</PageTitle>
+
+<!-- ENCABEZADO Y VISTA RÁPIDA -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h4 class="fw-bold mb-0 text-primary"><i class="bi bi-phone"></i> Cobro Rápido</h4>
+        <small class="text-muted">Modo Feria / Mostrador Ágil</small>
+    </div>
+    <button class="btn btn-outline-secondary btn-sm" @onclick="() => verHistorial = !verHistorial">
+        <i class="bi @(verHistorial ? "bi-grid-fill" : "bi-clock-history") me-1"></i>
+        @(verHistorial ? "Ver Catálogo" : "Ver Tickets")
+    </button>
+</div>
+
+@if (verHistorial)
+{
+    <!-- HISTORIAL DE TICKETS EMITIDOS -->
+    <div class="card border-0 shadow-sm mb-5">
+        <div class="card-header bg-dark text-white py-2">
+            <h6 class="mb-0 fw-bold"><i class="bi bi-clock-history me-1"></i> Ventas Recientes</h6>
+        </div>
+        <div class="card-body p-0">
+            @if (ventas == null || !ventas.Any())
+            {
+                <div class="p-3 text-center text-muted">No hay ventas registradas aún.</div>
+            }
+            else
+            {
+                <div class="list-group list-group-flush">
+                    @foreach (var v in ventas.Take(15))
+                    {
+                        <div class="list-group-item p-3">
+                            <div class="d-flex justify-content-between align-items-start mb-1">
+                                <div>
+                                    <strong class="text-primary">#@v.Id</strong>
+                                    <span class="badge bg-light text-dark border ms-1">@v.MedioPago</span>
+                                    <span class="badge bg-secondary ms-1">@v.Detalles.Count prenda(s)</span>
+                                </div>
+                                <h6 class="fw-bold text-success mb-0">$@v.Total.ToString("N2")</h6>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center small text-muted">
+                                <span>@v.Fecha.ToString("dd/MM/yyyy HH:mm")</span>
+                                <button class="btn btn-sm btn-link text-danger p-0 text-decoration-none" @onclick="() => AbrirModalEliminarVenta(v)">
+                                    Anular
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <!-- BUSCADOR VISUAL (FILTRA SIN AGREGAR POR ENTER) -->
+    <div class="mb-3">
+        <div class="input-group input-group-lg shadow-sm">
+            <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+            <input type="text"
+                   class="form-control border-start-0 ps-0"
+                   placeholder="Filtrar por tela, talle, color o marca..."
+                   @bind="textoBusqueda"
+                   @bind:event="oninput" />
+            @if (!string.IsNullOrWhiteSpace(textoBusqueda))
+            {
+                <button class="btn btn-outline-secondary" @onclick="() => textoBusqueda = string.Empty">✕</button>
+            }
+        </div>
+    </div>
+
+    <!-- MEDIO DE PAGO RÁPIDO -->
+    <div class="card border-0 shadow-sm mb-2 bg-light">
+        <div class="card-body p-2">
+            <div class="row g-1 text-center">
+                <div class="col-4">
+                    <button class="btn w-100 py-2 fw-bold btn-sm @(medioPagoSeleccionado == "Efectivo" ? "btn-success" : "btn-outline-secondary bg-white")"
+                            @onclick='() => SeleccionarMedioPago("Efectivo")'>
+                        💵 Efectivo
+                    </button>
+                </div>
+                <div class="col-4">
+                    <button class="btn w-100 py-2 fw-bold btn-sm @(medioPagoSeleccionado == "Mercado Pago" ? "btn-info text-white" : "btn-outline-secondary bg-white")"
+                            @onclick='() => SeleccionarMedioPago("Mercado Pago")'>
+                        📱 MP / QR
+                    </button>
+                </div>
+                <div class="col-4">
+                    <button class="btn w-100 py-2 fw-bold btn-sm @(medioPagoSeleccionado == "Transferencia" ? "btn-primary" : "btn-outline-secondary bg-white")"
+                            @onclick='() => SeleccionarMedioPago("Transferencia")'>
+                        🏦 Transf.
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DESCUENTOS RÁPIDOS -->
+    <div class="d-flex gap-1 mb-3 align-items-center">
+        <span class="small text-muted fw-bold me-1">Promo:</span>
+        <button class="btn btn-sm @(porcentajeDescuento == 0 ? "btn-dark" : "btn-outline-dark")" @onclick="() => porcentajeDescuento = 0">
+            0%
+        </button>
+        <button class="btn btn-sm @(porcentajeDescuento == 10 ? "btn-success" : "btn-outline-success")" @onclick="() => porcentajeDescuento = 10">
+            -10% Efectivo
+        </button>
+        <button class="btn btn-sm @(porcentajeDescuento == 15 ? "btn-warning text-dark" : "btn-outline-warning text-dark")" @onclick="() => porcentajeDescuento = 15">
+            -15% Promo
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(mensajeError))
+    {
+        <div class="alert alert-danger py-2 small shadow-sm">@mensajeError</div>
+    }
+
+    <!-- GRILLA / LISTADO TÁCTIL DE PRENDAS DISPONIBLES -->
+    <div class="row g-2 mb-5 pb-5">
+        @if (listaVariantesFiltradas == null || !listaVariantesFiltradas.Any())
+        {
+            <div class="col-12 text-center text-muted py-4">
+                <i class="bi bi-emoji-frown fs-2 d-block mb-1"></i>
+                No se encontraron prendas con stock disponible.
+            </div>
+        }
+        else
+        {
+            @foreach (var item in listaVariantesFiltradas)
+            {
+                var cantCarrito = ObtenerCantidadEnCarrito(item.VarianteId);
+
+                <div class="col-12 col-md-6">
+                    <div class="card border-0 shadow-sm @(cantCarrito > 0 ? "border-start border-4 border-success bg-light" : "")">
+                        <div class="card-body p-3">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="fw-bold mb-1">@item.NombreProducto</h6>
+                                    <div class="d-flex gap-1 align-items-center">
+                                        <span class="badge bg-dark">Talle @item.Talle</span>
+                                        <span class="badge bg-secondary">@item.Color</span>
+                                        <small class="text-muted ms-1">Stock: <strong>@item.StockActual</strong></small>
+                                    </div>
+                                </div>
+                                <div class="text-end">
+                                    <h5 class="fw-bold text-success mb-0">$@item.Precio.ToString("N2")</h5>
+                                </div>
+                            </div>
+
+                            <hr class="my-2" />
+
+                            <!-- BOTONES TÁCTILES +/- -->
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="small text-muted">A llevar:</span>
+                                <div class="d-flex align-items-center gap-2">
+                                    <button class="btn btn-outline-danger btn-sm rounded-circle px-3 py-1 fw-bold fs-6"
+                                            disabled="@(cantCarrito == 0)"
+                                            @onclick="() => RestarPrenda(item)">
+                                        -
+                                    </button>
+                                    <span class="fw-bold fs-5 text-primary text-center" style="min-width: 32px;">
+                                        @cantCarrito
+                                    </span>
+                                    <button class="btn btn-success btn-sm rounded-circle px-3 py-1 fw-bold fs-6"
+                                            disabled="@(cantCarrito >= item.StockActual)"
+                                            @onclick="() => SumarPrenda(item)">
+                                        +
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+
+    <!-- BARRA INFERIOR FIJA DE COBRO -->
+    <div class="fixed-bottom bg-white border-top shadow-lg p-3" style="z-index: 1040;">
+        <div class="container-fluid p-0">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="small text-muted d-block">
+                        @TotalPrendasCarrito() prenda(s)
+                        @(porcentajeDescuento > 0 ? $"(-{porcentajeDescuento}% aplicado)" : "")
+                    </span>
+                    <h4 class="fw-bold text-success mb-0">$@CalcularTotalFinal().ToString("N2")</h4>
+                </div>
+                <div class="d-flex gap-2">
+                    @if (carrito.Any())
+                    {
+                        <button class="btn btn-outline-danger btn-sm px-3" @onclick="() => carrito.Clear()">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    }
+                    <button class="btn btn-success btn-lg px-4 fw-bold shadow"
+                            disabled="@(!carrito.Any() || procesandoVenta)"
+                            @onclick="ConfirmarVentaRapida">
+                        @if (procesandoVenta)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-check2-circle me-1"></i>
+                        }
+                        COBRAR
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ------------------- MODAL ÉXITO Y TICKET WHATSAPP ------------------- *@
+@if (mostrarModalExito && ventaReciente != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5); z-index: 1060;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white py-2">
+                    <h6 class="modal-title fw-bold">¡Venta #@ventaReciente.Id Registrada!</h6>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CerrarModalExito"></button>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <i class="bi bi-check-circle-fill text-success fs-1 mb-2 d-block"></i>
+                    <h4 class="fw-bold">$@ventaReciente.Total.ToString("N2")</h4>
+                    <p class="text-muted small mb-3">Cobrado con @ventaReciente.MedioPago</p>
+
+                    <div class="input-group input-group-sm mb-3">
+                        <span class="input-group-text"><i class="bi bi-whatsapp"></i> +54</span>
+                        <input type="tel" class="form-control" placeholder="Celular sin 15 (Ej: 1123456789)" @bind="telefonoCliente" />
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <a class="btn btn-success fw-bold"
+                           href="@GenerarEnlaceWhatsApp()"
+                           target="_blank"
+                           @onclick="CerrarModalExito">
+                            <i class="bi bi-whatsapp me-1"></i> Enviar Comprobante por WhatsApp
+                        </a>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="CerrarModalExito">
+                            Continuar sin Comprobante
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ------------------- MODAL ANULAR VENTA ------------------- *@
+@if (mostrarModalEliminar && ventaAEliminar != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5); z-index: 1060;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h6 class="modal-title fw-bold">Anular Ticket #@ventaAEliminar.Id</h6>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => mostrarModalEliminar = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">¿Seguro que querés anular la venta de <strong>$@ventaAEliminar.Total.ToString("N2")</strong>?</p>
+                    <small class="text-muted">Las prendas regresarán al stock disponible.</small>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" @onclick="() => mostrarModalEliminar = false">Volver</button>
+                    <button type="button" class="btn btn-danger btn-sm" @onclick="ConfirmarAnulacion">Confirmar Anulación</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IEnumerable<Venta>? ventas;
+    private IEnumerable<Producto>? productos;
+    private bool verHistorial = false;
+    private string textoBusqueda = string.Empty;
+    private string medioPagoSeleccionado = "Efectivo";
+    private int porcentajeDescuento = 0;
+    private string mensajeError = string.Empty;
+    private bool procesandoVenta = false;
+
+    private bool mostrarModalEliminar = false;
+    private Venta? ventaAEliminar;
+
+    private bool mostrarModalExito = false;
+    private Venta? ventaReciente;
+    private string telefonoCliente = string.Empty;
+
+    private class ItemCatalogoVM
+    {
+        public int VarianteId { get; set; }
+        public string NombreProducto { get; set; } = string.Empty;
+        public string Talle { get; set; } = string.Empty;
+        public string Color { get; set; } = string.Empty;
+        public int StockActual { get; set; }
+        public decimal Precio { get; set; }
+    }
+
+    private List<ItemCatalogoVM> todasLasVariantes = new();
+    private Dictionary<int, (ItemCatalogoVM item, int cantidad)> carrito = new();
+
+    private IEnumerable<ItemCatalogoVM> listaVariantesFiltradas
+    {
+        get
+        {
+            var consulta = todasLasVariantes.Where(v => v.StockActual > 0);
+
+            if (string.IsNullOrWhiteSpace(textoBusqueda))
+                return consulta;
+
+            // Divide lo escrito en palabras sueltas (ej: "conjunto", "90")
+            var terminos = textoBusqueda.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            // Exige que TODAS las palabras figuren en el producto completo
+            return consulta.Where(v =>
+            {
+                var textoCompletoPrenda = $"{v.NombreProducto} {v.Talle} {v.Color}";
+                return terminos.All(termino => textoCompletoPrenda.Contains(termino, StringComparison.OrdinalIgnoreCase));
+            });
+        }
+    }
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarDatos();
+    }
+
+    private async Task CargarDatos()
+    {
+        ventas = await VentaService.ObtenerTodasAsync();
+        productos = await ProductoService.ObtenerTodosAsync();
+
+        todasLasVariantes.Clear();
+        foreach (var p in productos)
+        {
+            foreach (var v in p.Variantes)
+            {
+                todasLasVariantes.Add(new ItemCatalogoVM
+                    {
+                        VarianteId = v.Id,
+                        NombreProducto = string.IsNullOrWhiteSpace(p.Marca) ? p.Nombre : $"[{p.Marca}] {p.Nombre}",
+                        Talle = v.Talle,
+                        Color = v.Color,
+                        StockActual = v.StockActual,
+                        Precio = v.Precio
+                    });
+            }
+        }
+    }
+
+    private void SeleccionarMedioPago(string medio)
+    {
+        medioPagoSeleccionado = medio;
+        if (medio == "Efectivo" && porcentajeDescuento == 0)
+        {
+            porcentajeDescuento = 10;
+        }
+    }
+
+    private int ObtenerCantidadEnCarrito(int varianteId) =>
+        carrito.ContainsKey(varianteId) ? carrito[varianteId].cantidad : 0;
+
+    private void SumarPrenda(ItemCatalogoVM item)
+    {
+        mensajeError = string.Empty;
+        if (carrito.ContainsKey(item.VarianteId))
+        {
+            if (carrito[item.VarianteId].cantidad < item.StockActual)
+                carrito[item.VarianteId] = (item, carrito[item.VarianteId].cantidad + 1);
+        }
+        else
+        {
+            if (item.StockActual > 0)
+                carrito.Add(item.VarianteId, (item, 1));
+        }
+    }
+
+    private void RestarPrenda(ItemCatalogoVM item)
+    {
+        if (carrito.ContainsKey(item.VarianteId))
+        {
+            var cant = carrito[item.VarianteId].cantidad - 1;
+            if (cant <= 0)
+                carrito.Remove(item.VarianteId);
+            else
+                carrito[item.VarianteId] = (item, cant);
+        }
+    }
+
+    private int TotalPrendasCarrito() => carrito.Values.Sum(c => c.cantidad);
+
+    private decimal CalcularSubtotal() => carrito.Values.Sum(c => c.cantidad * c.item.Precio);
+
+    private decimal CalcularTotalFinal()
+    {
+        var subtotal = CalcularSubtotal();
+        if (porcentajeDescuento > 0)
+        {
+            var descuento = subtotal * (porcentajeDescuento / 100m);
+            return Math.Round(subtotal - descuento, 2);
+        }
+        return subtotal;
+    }
+
+    private async Task ConfirmarVentaRapida()
+    {
+        try
+        {
+            if (!carrito.Any()) return;
+
+            procesandoVenta = true;
+            mensajeError = string.Empty;
+
+            var totalFinal = CalcularTotalFinal();
+            var factorDescuento = CalcularSubtotal() > 0 ? (totalFinal / CalcularSubtotal()) : 1m;
+
+            var nuevaVenta = new Venta
+                {
+                    ClienteId = null,
+                    MedioPago = medioPagoSeleccionado,
+                    Observaciones = porcentajeDescuento > 0 ? $"Venta Feria (Descuento {porcentajeDescuento}%)" : "Venta Feria",
+                    Total = totalFinal,
+                    Detalles = carrito.Values.Select(c => new DetalleVenta
+                    {
+                        VarianteProductoId = c.item.VarianteId,
+                        Cantidad = c.cantidad,
+                        PrecioUnitarioVenta = Math.Round(c.item.Precio * factorDescuento, 2)
+                    }).ToList()
+                };
+
+            await VentaService.RegistrarVentaAsync(nuevaVenta);
+            ventaReciente = nuevaVenta;
+
+            carrito.Clear();
+            porcentajeDescuento = 0;
+            await CargarDatos();
+
+            mostrarModalExito = true;
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ex.Message;
+        }
+        finally
+        {
+            procesandoVenta = false;
+        }
+    }
+
+    private string GenerarEnlaceWhatsApp()
+    {
+        if (ventaReciente == null) return "#";
+
+        var telefonoLimpio = new string(telefonoCliente.Where(char.IsDigit).ToArray());
+        var mensaje = $"¡Hola! Muchas gracias por tu compra en *Programa Lencería*.\n\n" +
+                      $"*Ticket:* #{ventaReciente.Id}\n" +
+                      $"*Total abonado:* ${ventaReciente.Total:N2} ({ventaReciente.MedioPago})\n\n" +
+                      $"¡Esperamos que lo disfrutes!";
+
+        return $"https://wa.me/549{telefonoLimpio}?text={Uri.EscapeDataString(mensaje)}";
+    }
+
+    private void CerrarModalExito()
+    {
+        mostrarModalExito = false;
+        ventaReciente = null;
+        telefonoCliente = string.Empty;
+    }
+
+    private void AbrirModalEliminarVenta(Venta v)
+    {
+        ventaAEliminar = v;
+        mostrarModalEliminar = true;
+    }
+
+    private async Task ConfirmarAnulacion()
+    {
+        if (ventaAEliminar != null)
+        {
+            await VentaService.EliminarVentaAsync(ventaAEliminar.Id);
+            mostrarModalEliminar = false;
+            ventaAEliminar = null;
+            await CargarDatos();
+        }
+    }
+}

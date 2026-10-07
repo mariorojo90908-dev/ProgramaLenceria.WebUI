@@ -1,0 +1,279 @@
+﻿@page "/"
+@using ProgramaLenceria.Application.Common.Interfaces
+@using ProgramaLenceria.Domain.Entities
+@inject IVentaService VentaService
+@inject ICompraService CompraService
+@inject IProductoService ProductoService
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Inicio - Gestión Lencería</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="fw-bold mb-0">Panel de Control</h2>
+        <small class="text-muted">Resumen general del negocio al @DateTime.Now.ToString("dd/MM/yyyy")</small>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-primary shadow-sm" @onclick='() => Navigation.NavigateTo("ventas")'>
+            <i class="bi bi-bag-check-fill me-1"></i> + Cobrar Venta
+        </button>
+        <button class="btn btn-outline-secondary shadow-sm" @onclick='() => Navigation.NavigateTo("compras")'>
+            <i class="bi bi-cart-plus-fill me-1"></i> + Cargar Compra
+        </button>
+    </div>
+</div>
+
+@if (cargando)
+{
+    <div class="d-flex justify-content-center my-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Cargando...</span>
+        </div>
+    </div>
+}
+else
+{
+    <!-- 5 TARJETAS DE MÉTRICAS -->
+    <div class="row g-3 mb-4">
+        <!-- Ventas Hoy -->
+        <div class="col-md-4 col-lg">
+            <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+                <div class="card-body">
+                    <span class="text-muted text-uppercase fw-semibold small">Ventas de Hoy</span>
+                    <h4 class="fw-bold text-primary my-2">$@totalVentasHoy.ToString("N2")</h4>
+                    <small class="text-muted">@cantidadVentasHoy ticket(s) emitido(s)</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ventas Mes -->
+        <div class="col-md-4 col-lg">
+            <div class="card shadow-sm border-0 border-start border-success border-4 h-100">
+                <div class="card-body">
+                    <span class="text-muted text-uppercase fw-semibold small">Ventas Mes Actual</span>
+                    <h4 class="fw-bold text-success my-2">$@totalVentasMes.ToString("N2")</h4>
+                    <small class="text-muted">@cantidadVentasMes venta(s) este mes</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Unidades en Stock -->
+        <div class="col-md-4 col-lg">
+            <div class="card shadow-sm border-0 border-start border-info border-4 h-100">
+                <div class="card-body">
+                    <span class="text-muted text-uppercase fw-semibold small">Prendas en Stock</span>
+                    <h4 class="fw-bold text-info my-2">@totalPrendasStock u.</h4>
+                    <small class="text-muted">@totalModelos productos activos</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Valor del Stock Disponible -->
+        <div class="col-md-6 col-lg">
+            <div class="card shadow-sm border-0 border-start border-warning border-4 h-100">
+                <div class="card-body">
+                    <span class="text-muted text-uppercase fw-semibold small">Valor Total Stock</span>
+                    <h4 class="fw-bold text-dark my-2">$@valorTotalStock.ToString("N2")</h4>
+                    <small class="text-muted">Valuado a precio de venta</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alertas de Stock Bajo -->
+        <div class="col-md-6 col-lg">
+            <div class="card shadow-sm border-0 border-start @(variantesStockBajo.Any() ? "border-danger bg-danger-subtle" : "border-secondary") border-4 h-100">
+                <div class="card-body">
+                    <span class="text-muted text-uppercase fw-semibold small">Stock Crítico</span>
+                    <h4 class="fw-bold @(variantesStockBajo.Any() ? "text-danger" : "text-secondary") my-2">
+                        @variantesStockBajo.Count
+                    </h4>
+                    <small class="text-muted">@(variantesStockBajo.Any() ? "Requiere reposición" : "Inventario al día")</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TABLAS INFORMATIVAS -->
+    <div class="row g-4">
+        <!-- ALERTAS DE REPOSICIÓN -->
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white border-0 py-3">
+                    <h5 class="fw-bold mb-0 text-danger">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i> Alertas de Stock Mínimo
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    @if (!variantesStockBajo.Any())
+                    {
+                        <div class="p-4 text-center text-muted">
+                            <span class="text-success fw-bold">✓ ¡Excelente!</span> No hay prendas en nivel crítico.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0 text-center" style="font-size: 0.9rem;">
+                                <thead class="table-light text-muted">
+                                    <tr>
+                                        <th class="text-start ps-3">Prenda</th>
+                                        <th>Talle</th>
+                                        <th>Color</th>
+                                        <th>Stock Actual</th>
+                                        <th>Mínimo</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in variantesStockBajo)
+                                    {
+                                        <tr>
+                                            <td class="text-start ps-3 fw-semibold">@item.NombreProducto</td>
+                                            <td><span class="badge bg-light text-dark border">@item.Talle</span></td>
+                                            <td>@item.Color</td>
+                                            <td>
+                                                <span class="badge @(item.StockActual == 0 ? "bg-danger" : "bg-warning text-dark")">
+                                                    @item.StockActual u.
+                                                </span>
+                                            </td>
+                                            <td class="text-muted">@item.StockMinimo u.</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- ÚLTIMAS VENTAS REGISTRADAS -->
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0 text-dark">
+                        <i class="bi bi-clock-history me-1"></i> Últimas Ventas
+                    </h5>
+                    <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick='() => Navigation.NavigateTo("ventas")'>
+                        Ver todas →
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    @if (!ultimasVentas.Any())
+                    {
+                        <div class="p-4 text-center text-muted">No hay movimientos registrados.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0" style="font-size: 0.9rem;">
+                                <thead class="table-light text-muted">
+                                    <tr>
+                                        <th class="ps-3">Nº / Hora</th>
+                                        <th>Cliente</th>
+                                        <th>Pago</th>
+                                        <th class="text-end pe-3">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var v in ultimasVentas)
+                                    {
+                                        <tr>
+                                            <td class="ps-3">
+                                                <strong>#@v.Id</strong> - <small class="text-muted">@v.Fecha.ToString("HH:mm")</small>
+                                            </td>
+                                            <td>@(v.Cliente != null ? v.Cliente.Nombre : "Consumidor Final")</td>
+                                            <td><span class="badge bg-light text-dark border">@v.MedioPago</span></td>
+                                            <td class="text-end pe-3 fw-bold text-success">$@v.Total.ToString("N2")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool cargando = true;
+
+    private decimal totalVentasHoy = 0;
+    private int cantidadVentasHoy = 0;
+
+    private decimal totalVentasMes = 0;
+    private int cantidadVentasMes = 0;
+
+    private int totalPrendasStock = 0;
+    private int totalModelos = 0;
+    private decimal valorTotalStock = 0;
+
+    private class VarianteCriticaVM
+    {
+        public string NombreProducto { get; set; } = string.Empty;
+        public string Talle { get; set; } = string.Empty;
+        public string Color { get; set; } = string.Empty;
+        public int StockActual { get; set; }
+        public int StockMinimo { get; set; }
+    }
+
+    private List<VarianteCriticaVM> variantesStockBajo = new();
+    private List<Venta> ultimasVentas = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarDashboard();
+    }
+
+    private async Task CargarDashboard()
+    {
+        cargando = true;
+
+        var hoy = DateTime.Today;
+        var inicioMes = new DateTime(hoy.Year, hoy.Month, 1);
+
+        var ventas = (await VentaService.ObtenerTodasAsync()).ToList();
+        var productos = (await ProductoService.ObtenerTodosAsync()).ToList();
+
+        // 1. Cálculos de Ventas
+        var ventasHoy = ventas.Where(v => v.Fecha.Date == hoy).ToList();
+        totalVentasHoy = ventasHoy.Sum(v => v.Total);
+        cantidadVentasHoy = ventasHoy.Count;
+
+        var ventasMes = ventas.Where(v => v.Fecha >= inicioMes).ToList();
+        totalVentasMes = ventasMes.Sum(v => v.Total);
+        cantidadVentasMes = ventasMes.Count;
+
+        ultimasVentas = ventas.OrderByDescending(v => v.Fecha).Take(6).ToList();
+
+        // 2. Cálculos de Inventario y Valorización
+        totalModelos = productos.Count;
+        var todasLasVariantes = productos.SelectMany(p => p.Variantes).ToList();
+
+        totalPrendasStock = todasLasVariantes.Sum(v => v.StockActual);
+        valorTotalStock = todasLasVariantes.Sum(v => v.StockActual * v.Precio);
+
+        variantesStockBajo.Clear();
+        foreach (var prod in productos)
+        {
+            foreach (var v in prod.Variantes)
+            {
+                if (v.StockActual <= v.StockMinimo)
+                {
+                    variantesStockBajo.Add(new VarianteCriticaVM
+                        {
+                            NombreProducto = $"[{prod.Marca}] {prod.Nombre}",
+                            Talle = v.Talle,
+                            Color = v.Color,
+                            StockActual = v.StockActual,
+                            StockMinimo = v.StockMinimo
+                        });
+                }
+            }
+        }
+
+        cargando = false;
+    }
+}

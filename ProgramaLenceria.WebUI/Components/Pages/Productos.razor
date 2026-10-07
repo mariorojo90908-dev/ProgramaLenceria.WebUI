@@ -1,0 +1,739 @@
+﻿@page "/productos"
+@using ProgramaLenceria.Application.Common.Interfaces
+@using ProgramaLenceria.Domain.Entities
+@using ProgramaLenceria.Domain.Enums
+@inject IProductoService ProductoService
+@rendermode InteractiveServer
+
+<PageTitle>Productos - Lencería</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h3 class="m-0 fs-4 fw-bold">Gestión de Productos por Temporada</h3>
+        <small class="text-muted">Control de inventario, filtrado rápido por talle y categorización</small>
+    </div>
+    <button class="btn btn-success shadow-sm" @onclick="AbrirModalNuevoProducto">
+        <i class="bi bi-plus-circle me-1"></i> + Nuevo Producto
+    </button>
+</div>
+
+<!-- ================= BARRA DE FILTROS RÁPIDOS ================= -->
+<div class="card shadow-sm border-0 mb-4 bg-light">
+    <div class="card-body py-3">
+        <div class="row g-2 align-items-center">
+            <div class="col-md-3">
+                <label class="form-label small fw-bold mb-1">Filtrar por Categoría</label>
+                <select class="form-select form-select-sm" @bind="filtroCategoria">
+                    <option value="">-- Todas las categorías --</option>
+                    <option value="Conjuntos">Conjuntos</option>
+                    <option value="Corpiños">Corpiños</option>
+                    <option value="Bombachas">Bombachas</option>
+                    <option value="Pijamas">Pijamas</option>
+                    <option value="Medias">Medias</option>
+                    <option value="Accesorios">Accesorios</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small fw-bold mb-1">Filtrar por Talle</label>
+                <input type="text" class="form-control form-control-sm" placeholder="Ej: 90, M, XL..." @bind="filtroTalle" @bind:event="oninput" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small fw-bold mb-1">Buscar por Nombre o Marca</label>
+                <input type="text" class="form-control form-control-sm" placeholder="Buscar prenda..." @bind="filtroTexto" @bind:event="oninput" />
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button class="btn btn-outline-secondary btn-sm w-100" @onclick="LimpiarFiltros">
+                    Limpiar Filtros
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ================= LISTA DE DATALIST PARA COLORES ================= -->
+<datalist id="listaColores">
+    @foreach (var c in coloresDisponibles)
+    {
+        <option value="@c"></option>
+    }
+</datalist>
+
+@if (productos == null)
+{
+    <p><em>Cargando catálogo...</em></p>
+}
+else if (!productos.Any())
+{
+    <div class="alert alert-info">No hay productos registrados en la base de datos.</div>
+}
+else
+{
+    <!-- TEMPORADA PRIMAVERA / VERANO -->
+    <div class="card mb-3 border-warning shadow-sm">
+        <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center"
+             style="cursor: pointer;" @onclick="() => verVerano = !verVerano">
+            <h5 class="m-0 fw-bold fs-6">☀️ Primavera / Verano</h5>
+            <div>
+                <span class="badge bg-dark me-2">@ObtenerProductosPorTemporada(Temporada.PrimaveraVerano).Count() producto(s)</span>
+                <span class="fw-bold small">@(verVerano ? "▲ Minimizar" : "▼ Desplegar")</span>
+            </div>
+        </div>
+        @if (verVerano)
+        {
+            <div class="card-body p-0">
+                @RenderTablaProductos(ObtenerProductosPorTemporada(Temporada.PrimaveraVerano))
+            </div>
+        }
+    </div>
+
+    <!-- TEMPORADA ATEMPORAL -->
+    <div class="card mb-3 border-info shadow-sm">
+        <div class="card-header bg-info text-white d-flex justify-content-between align-items-center"
+             style="cursor: pointer;" @onclick="() => verAtemporal = !verAtemporal">
+            <h5 class="m-0 fw-bold fs-6">♾️ Atemporal / Todo el Año</h5>
+            <div>
+                <span class="badge bg-dark me-2">@ObtenerProductosPorTemporada(Temporada.Atemporal).Count() producto(s)</span>
+                <span class="fw-bold small">@(verAtemporal ? "▲ Minimizar" : "▼ Desplegar")</span>
+            </div>
+        </div>
+        @if (verAtemporal)
+        {
+            <div class="card-body p-0">
+                @RenderTablaProductos(ObtenerProductosPorTemporada(Temporada.Atemporal))
+            </div>
+        }
+    </div>
+
+    <!-- TEMPORADA OTOÑO / INVIERNO -->
+    <div class="card mb-3 border-secondary shadow-sm opacity-75">
+        <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center"
+             style="cursor: pointer;" @onclick="() => verInvierno = !verInvierno">
+            <h5 class="m-0 fw-bold fs-6">❄️ Otoño / Invierno (Guardado / Fuera de Temporada)</h5>
+            <div>
+                <span class="badge bg-dark me-2">@ObtenerProductosPorTemporada(Temporada.OtonoInvierno).Count() producto(s)</span>
+                <span class="fw-bold small">@(verInvierno ? "▲ Minimizar" : "▼ Desplegar")</span>
+            </div>
+        </div>
+        @if (verInvierno)
+        {
+            <div class="card-body p-0">
+                @RenderTablaProductos(ObtenerProductosPorTemporada(Temporada.OtonoInvierno))
+            </div>
+        }
+    </div>
+}
+
+@* ------------------- PLANTILLA RESPONSIVA REUTILIZABLE ------------------- *@
+@code {
+    private RenderFragment RenderTablaProductos(IEnumerable<Producto> lista) => @<text>
+        @if (!lista.Any())
+    {
+        <div class="p-3 text-muted text-center small">No hay prendas registradas con los filtros seleccionados.</div>
+    }
+    else
+    {
+        @* --- 1. MODO ESCRITORIO (TABLA TRADICIONAL) --- *@
+        <div class="table-responsive d-none d-md-block">
+            <table class="table table-striped table-hover align-middle mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="width: 12%;">Categoría</th>
+                        <th style="width: 12%;">Marca</th>
+                        <th style="width: 20%;">Nombre</th>
+                        <th style="width: 12%;">Detalle</th>
+                        <th style="width: 12%;">Precio (Desde)</th>
+                        <th style="width: 20%;">Variantes y Stock</th>
+                        <th style="width: 12%;">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var prod in lista)
+                {
+                var variantesVisibles = string.IsNullOrWhiteSpace(filtroTalle)
+                ? prod.Variantes
+                : prod.Variantes.Where(v => v.Talle.Trim().Equals(filtroTalle.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+
+                var precioMinimo = prod.Variantes.Any() ? prod.Variantes.Min(v => v.Precio) : 0;
+                var stockMostrado = variantesVisibles.Sum(v => v.StockActual);
+
+                    <tr>
+                        <td><span class="badge bg-secondary">@prod.Categoria</span></td>
+                        <td><strong>@(string.IsNullOrWhiteSpace(prod.Marca) ? "-" : prod.Marca)</strong></td>
+                        <td>@prod.Nombre</td>
+                        <td>@(prod.CategoriaDetalle ?? "-")</td>
+                        <td>$@precioMinimo.ToString("N2")</td>
+                        <td>
+                            <div class="mb-1">
+                                <span class="badge @(stockMostrado > 0 ? "bg-dark" : "bg-danger")">
+                                    Total@(string.IsNullOrWhiteSpace(filtroTalle) ? "" : $" (Talle {filtroTalle})"): @stockMostrado u.
+                                </span>
+                            </div>
+                            <div class="d-flex flex-wrap gap-1">
+                                @foreach (var v in variantesVisibles)
+                            {
+                                <span class="badge @(v.StockActual > 0 ? "bg-light text-dark border" : "bg-danger text-white") p-1 font-monospace" style="font-size: 0.78rem;">
+                                    <strong>@v.Talle</strong> (@v.Color): <span class="fw-bold @(v.StockActual > 0 ? "text-primary" : "text-white")">@v.StockActual u.</span>
+                                </span>
+                            }
+                            </div>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => AbrirModalEditarProducto(prod)">
+                                Editar
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => AbrirModalConfirmarEliminar(prod)">
+                                Eliminar
+                            </button>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+
+        @* --- 2. MODO CELULAR (TARJETAS TÁCTILES VERTICALES) --- *@
+        <div class="d-md-none p-2 bg-light">
+            @foreach (var prod in lista)
+        {
+        var variantesVisibles = string.IsNullOrWhiteSpace(filtroTalle)
+        ? prod.Variantes
+        : prod.Variantes.Where(v => v.Talle.Trim().Equals(filtroTalle.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+
+        var precioMinimo = prod.Variantes.Any() ? prod.Variantes.Min(v => v.Precio) : 0;
+        var stockMostrado = variantesVisibles.Sum(v => v.StockActual);
+
+            <div class="card shadow-sm border rounded-3 mb-3 bg-white">
+                <div class="card-body p-3">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                            <span class="badge bg-secondary mb-1">@prod.Categoria</span>
+                            <h6 class="fw-bold mb-0 text-dark">@prod.Nombre</h6>
+                            @if (!string.IsNullOrWhiteSpace(prod.Marca))
+                        {
+                            <small class="text-muted d-block">Marca: @prod.Marca</small>
+                        }
+                        </div>
+                        <div class="text-end">
+                            <span class="fs-5 fw-bold text-success d-block">$@precioMinimo.ToString("N2")</span>
+                            <span class="badge @(stockMostrado > 0 ? "bg-dark" : "bg-danger")">
+                                Total: @stockMostrado u.
+                            </span>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(prod.CategoriaDetalle))
+                {
+                    <p class="text-muted small mb-2">@prod.CategoriaDetalle</p>
+                }
+
+                    <hr class="my-2 text-muted" />
+
+                    <div class="mb-3">
+                        <small class="text-muted d-block mb-1 fw-bold">Stock por Talle y Color:</small>
+                        <div class="d-flex flex-wrap gap-1">
+                            @foreach (var v in variantesVisibles)
+                        {
+                            <div class="border rounded px-2 py-1 bg-light small">
+                                <span class="badge bg-dark">Talle @v.Talle</span>
+                                <span class="badge bg-secondary">@v.Color</span>
+                                <strong class="@(v.StockActual <= v.StockMinimo ? "text-danger" : "text-primary") ms-1">
+                                    @v.StockActual u.
+                                </strong>
+                            </div>
+                        }
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-primary flex-fill py-2 fw-semibold" @onclick="() => AbrirModalEditarProducto(prod)">
+                            ✏ Editar
+                        </button>
+                        <button class="btn btn-outline-danger flex-fill py-2 fw-semibold" @onclick="() => AbrirModalConfirmarEliminar(prod)">
+                            🗑 Eliminar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+        </div>
+    }
+    </text>;
+}
+
+@* ------------------- MODAL PARA NUEVO / EDITAR PRODUCTO ------------------- *@
+@if (mostrarModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title">@(esEdicion ? "Editar Producto" : "Nuevo Producto de Lencería")</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CerrarModal"></button>
+                </div>
+                <div class="modal-body">
+
+                    @if (!string.IsNullOrEmpty(mensajeError))
+                    {
+                        <div class="alert alert-danger">@mensajeError</div>
+                    }
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Categoría</label>
+                            <select class="form-select" value="@productoActual.Categoria" @onchange="OnCategoriaChange">
+                                <option value="Corpiños">Corpiños</option>
+                                <option value="Bombachas">Bombachas</option>
+                                <option value="Conjuntos">Conjuntos</option>
+                                <option value="Pijamas">Pijamas</option>
+                                <option value="Medias">Medias</option>
+                                <option value="Accesorios">Accesorios</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Temporada</label>
+                            <select class="form-select" @bind="productoActual.Temporada">
+                                <option value="@Temporada.Atemporal">♾️ Atemporal / Todo el año</option>
+                                <option value="@Temporada.PrimaveraVerano">☀️ Primavera / Verano</option>
+                                <option value="@Temporada.OtonoInvierno">❄️ Otoño / Invierno</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label fw-bold">Marca</label>
+                            <input type="text" class="form-control" @bind="productoActual.Marca" placeholder="Ej: Selú, Coco" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold">Nombre del Producto</label>
+                            <input type="text" class="form-control" @bind="productoActual.Nombre" placeholder="Ej: Remera Térmica Manga Larga" />
+                        </div>
+                    </div>
+
+                    <!-- ATRIBUTOS DINÁMICOS PARA CONJUNTOS Y CORPIÑOS -->
+                    @if (productoActual.Categoria == "Conjuntos" || productoActual.Categoria == "Corpiños")
+                    {
+                        <div class="card p-3 mb-3 bg-light border-info-subtle shadow-sm">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="fw-bold small text-primary">
+                                    <i class="bi bi-sliders me-1"></i> Opciones Rápidas para @productoActual.Categoria (Generan el Nombre)
+                                </span>
+                            </div>
+                            <div class="row g-2">
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-bold">Tela</label>
+                                    <select class="form-select form-select-sm" value="@atributoTela" @onchange="(e) => { atributoTela = e.Value?.ToString() ?? string.Empty; ActualizarNombreDinamico(); }">
+                                        <option value="">-- Seleccionar --</option>
+                                        <option value="Algodón">Algodón</option>
+                                        <option value="Morley">Morley</option>
+                                        <option value="Encaje">Encaje</option>
+                                        <option value="Lycra">Lycra</option>
+                                    </select>
+                                </div>
+
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-bold">Aro</label>
+                                    <select class="form-select form-select-sm" value="@atributoAro" @onchange="(e) => { atributoAro = e.Value?.ToString() ?? string.Empty; ActualizarNombreDinamico(); }">
+                                        <option value="">-- Seleccionar --</option>
+                                        <option value="Con Aro">Con Aro</option>
+                                        <option value="Sin Aro">Sin Aro</option>
+                                    </select>
+                                </div>
+
+                                @if (productoActual.Categoria == "Conjuntos")
+                                {
+                                    <div class="col-md-3">
+                                        <label class="form-label small fw-bold">Parte Inferior</label>
+                                        <select class="form-select form-select-sm" value="@atributoParteInferior" @onchange="(e) => { atributoParteInferior = e.Value?.ToString() ?? string.Empty; ActualizarNombreDinamico(); }">
+                                            <option value="">-- Seleccionar --</option>
+                                            <option value="Culote">Culote</option>
+                                            <option value="Regulable">Colaless Regulable</option>
+                                            <option value="Entera">Colaless Entera</option>
+                                            <option value="Vedetina">Vedetina</option>
+                                        </select>
+                                    </div>
+                                }
+
+                                <div class="col-md-3">
+                                    <label class="form-label small fw-bold">Armado</label>
+                                    <select class="form-select form-select-sm" value="@atributoArmado" @onchange="(e) => { atributoArmado = e.Value?.ToString() ?? string.Empty; ActualizarNombreDinamico(); }">
+                                        <option value="">-- Seleccionar --</option>
+                                        <option value="Armado">Armado</option>
+                                        <option value="Sin Armar">Sin Armar</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    <hr />
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="m-0 fw-bold">Variantes (Cálculo Automático por Docena + 60% Ganancia)</h6>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="AgregarNuevaVariante">
+                            + Agregar Variante
+                        </button>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered align-middle text-center">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 12%;">Talle</th>
+                                    <th style="width: 15%;">Color</th>
+                                    <th style="width: 15%;">Costo Docena ($)</th>
+                                    <th style="width: 13%;">Costo Unit. ($)</th>
+                                    <th style="width: 15%;">Precio Venta (+60%)</th>
+                                    <th style="width: 11%;">Stock Actual</th>
+                                    <th style="width: 13%;">Stock Mínimo</th>
+                                    <th style="width: 6%;">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var v in productoActual.Variantes)
+                                {
+                                    var costoDocena = v.PrecioCosto * 12;
+                                    <tr>
+                                        <td>
+                                            <input type="text" class="form-control form-control-sm text-center" @bind="v.Talle" placeholder="Ej: 85, M" />
+                                        </td>
+                                        <td>
+                                            <!-- SELECTOR DINÁMICO DE COLORES CON DATALIST -->
+                                            <input type="text" list="listaColores" class="form-control form-control-sm text-center" @bind="v.Color" placeholder="Elegir o escribir..." />
+                                        </td>
+                                        <td>
+                                            <input type="number" step="0.01" class="form-control form-control-sm text-end"
+                                                   value="@costoDocena"
+                                                   @onchange="(e) => CalcularPreciosPorDocena(v, e.Value)" placeholder="0.00" />
+                                        </td>
+                                        <td>
+                                            <span class="fw-bold text-muted">$@v.PrecioCosto.ToString("N2")</span>
+                                        </td>
+                                        <td>
+                                            <input type="number" step="0.01" class="form-control form-control-sm text-end fw-bold text-success"
+                                                   @bind="v.Precio" placeholder="0.00" />
+                                        </td>
+                                        <td>
+                                            <input type="number" class="form-control form-control-sm text-center" @bind="v.StockActual" min="0" />
+                                        </td>
+                                        <td>
+                                            <input type="number" class="form-control form-control-sm text-center text-danger fw-semibold" @bind="v.StockMinimo" min="0" />
+                                        </td>
+                                        <td>
+                                            <button type="button" class="btn btn-sm btn-danger" @onclick="() => EliminarVariante(v)">
+                                                ✕
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CerrarModal">Cancelar</button>
+                    <button type="button" class="btn btn-success" @onclick="GuardarProducto">
+                        @(esEdicion ? "Guardar Cambios" : "Guardar Producto")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ------------------- MODAL DE CONFIRMACIÓN PARA ELIMINAR ------------------- *@
+@if (mostrarModalEliminar && productoAEliminar != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Confirmar Eliminación</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CerrarModalEliminar"></button>
+                </div>
+                <div class="modal-body">
+                    <p>¿Estás seguro de que deseas eliminar el producto <strong>@productoAEliminar.Nombre</strong>?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CerrarModalEliminar">Cancelar</button>
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmarEliminacion">Eliminar Definitivamente</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IEnumerable<Producto>? productos;
+    private List<string> coloresDisponibles = new();
+
+    private bool mostrarModal = false;
+    private bool esEdicion = false;
+    private string mensajeError = string.Empty;
+    private Producto productoActual = new();
+
+    private bool mostrarModalEliminar = false;
+    private Producto? productoAEliminar;
+
+    private bool verVerano = true;
+    private bool verAtemporal = true;
+    private bool verInvierno = false;
+
+    // Estados para la barra de filtros
+    private string filtroCategoria = string.Empty;
+    private string filtroTalle = string.Empty;
+    private string filtroTexto = string.Empty;
+
+    // Atributos dinámicos del formulario
+    private string atributoTela = string.Empty;
+    private string atributoAro = string.Empty;
+    private string atributoParteInferior = string.Empty;
+    private string atributoArmado = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarProductos();
+    }
+
+    private async Task CargarProductos()
+    {
+        productos = await ProductoService.ObtenerTodosAsync();
+        ActualizarListaColores();
+    }
+
+    private void ActualizarListaColores()
+    {
+        if (productos != null)
+        {
+            coloresDisponibles = productos
+                .SelectMany(p => p.Variantes)
+                .Select(v => v.Color?.Trim())
+                .Where(c => !string.IsNullOrWhiteSpace(c) && c != "Único")
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(c => c)
+                .ToList()!;
+        }
+    }
+
+    private IEnumerable<Producto> ObtenerProductosPorTemporada(Temporada temp)
+    {
+        if (productos == null) return Enumerable.Empty<Producto>();
+
+        return productos.Where(p =>
+            p.Temporada == temp &&
+            (string.IsNullOrWhiteSpace(filtroCategoria) || p.Categoria == filtroCategoria) &&
+            (string.IsNullOrWhiteSpace(filtroTexto) ||
+                p.Nombre.Contains(filtroTexto, StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(p.Marca) && p.Marca.Contains(filtroTexto, StringComparison.OrdinalIgnoreCase))) &&
+            (string.IsNullOrWhiteSpace(filtroTalle) ||
+                p.Variantes.Any(v => v.Talle.Trim().Equals(filtroTalle.Trim(), StringComparison.OrdinalIgnoreCase)))
+        );
+    }
+
+    private void LimpiarFiltros()
+    {
+        filtroCategoria = string.Empty;
+        filtroTalle = string.Empty;
+        filtroTexto = string.Empty;
+    }
+
+    private void AbrirModalNuevoProducto()
+    {
+        mensajeError = string.Empty;
+        esEdicion = false;
+        LimpiarAtributosDinamicos();
+
+        productoActual = new Producto
+            {
+                Categoria = "Corpiños",
+                Temporada = Temporada.Atemporal,
+                Marca = "",
+                Nombre = "",
+                Variantes = new List<VarianteProducto>()
+            };
+
+        GenerarVariantesPredeterminadas("Corpiños");
+        mostrarModal = true;
+    }
+
+    private void AbrirModalEditarProducto(Producto prod)
+    {
+        mensajeError = string.Empty;
+        esEdicion = true;
+        LimpiarAtributosDinamicos();
+
+        productoActual = new Producto
+            {
+                Id = prod.Id,
+                Nombre = prod.Nombre,
+                Marca = prod.Marca,
+                Categoria = prod.Categoria,
+                CategoriaDetalle = prod.CategoriaDetalle,
+                Temporada = prod.Temporada,
+                EsActivo = prod.EsActivo,
+                ProveedorId = prod.ProveedorId,
+                Variantes = prod.Variantes.Select(v => new VarianteProducto
+                {
+                    Id = v.Id,
+                    ProductoId = v.ProductoId,
+                    Talle = v.Talle,
+                    Color = v.Color,
+                    PrecioCosto = v.PrecioCosto,
+                    Precio = v.Precio,
+                    StockActual = v.StockActual,
+                    StockMinimo = v.StockMinimo,
+                    Sku = v.Sku
+                }).ToList()
+            };
+
+        mostrarModal = true;
+    }
+
+    private void OnCategoriaChange(ChangeEventArgs e)
+    {
+        var nuevaCategoria = e.Value?.ToString() ?? "Corpiños";
+        productoActual.Categoria = nuevaCategoria;
+        LimpiarAtributosDinamicos();
+
+        if (!esEdicion)
+        {
+            GenerarVariantesPredeterminadas(nuevaCategoria);
+            ActualizarNombreDinamico();
+        }
+    }
+
+    private void LimpiarAtributosDinamicos()
+    {
+        atributoTela = string.Empty;
+        atributoAro = string.Empty;
+        atributoParteInferior = string.Empty;
+        atributoArmado = string.Empty;
+    }
+
+    private void ActualizarNombreDinamico()
+    {
+        if (productoActual.Categoria != "Conjuntos" && productoActual.Categoria != "Corpiños")
+            return;
+
+        var partes = new List<string>();
+
+        if (productoActual.Categoria == "Conjuntos")
+            partes.Add("Conjunto");
+        else if (productoActual.Categoria == "Corpiños")
+            partes.Add("Corpiño");
+
+        if (!string.IsNullOrWhiteSpace(atributoTela))
+            partes.Add(atributoTela);
+
+        if (!string.IsNullOrWhiteSpace(atributoAro))
+            partes.Add(atributoAro == "Con Aro" ? "c/ Aro" : "s/ Aro");
+
+        if (productoActual.Categoria == "Conjuntos" && !string.IsNullOrWhiteSpace(atributoParteInferior))
+            partes.Add(atributoParteInferior);
+
+        if (!string.IsNullOrWhiteSpace(atributoArmado))
+            partes.Add(atributoArmado);
+
+        productoActual.Nombre = string.Join(" ", partes);
+    }
+
+    private void GenerarVariantesPredeterminadas(string categoria)
+    {
+        string[] tallesDefault = categoria switch
+        {
+            "Conjuntos" => new[] { "85", "90", "95", "100" },
+            "Bombachas" => new[] { "M", "L", "XL" },
+            "Pijamas" => new[] { "M", "L" },
+            "Medias" => new[] { "Único" },
+            _ => new[] { "85", "90", "95" }
+        };
+
+        productoActual.Variantes = tallesDefault.Select(talle => new VarianteProducto
+            {
+                Talle = talle,
+                Color = "Único",
+                PrecioCosto = 0,
+                Precio = 0,
+                StockActual = 1,
+                StockMinimo = 2
+            }).ToList();
+    }
+
+    private void CerrarModal() => mostrarModal = false;
+
+    private void AgregarNuevaVariante()
+    {
+        productoActual.Variantes.Add(new VarianteProducto
+            {
+                Talle = "S",
+                Color = "Único",
+                PrecioCosto = 0,
+                Precio = 0,
+                StockActual = 1,
+                StockMinimo = 2
+            });
+    }
+
+    private void EliminarVariante(VarianteProducto variante)
+    {
+        if (productoActual.Variantes.Count > 1)
+        {
+            productoActual.Variantes.Remove(variante);
+        }
+    }
+
+    private void CalcularPreciosPorDocena(VarianteProducto variante, object? val)
+    {
+        if (decimal.TryParse(val?.ToString(), out decimal costoDocena) && costoDocena > 0)
+        {
+            variante.PrecioCosto = Math.Round(costoDocena / 12m, 2);
+            variante.Precio = Math.Round(variante.PrecioCosto * 1.60m, 2);
+        }
+        else
+        {
+            variante.PrecioCosto = 0;
+            variante.Precio = 0;
+        }
+    }
+
+    private async Task GuardarProducto()
+    {
+        try
+        {
+            mensajeError = string.Empty;
+
+            if (esEdicion)
+                await ProductoService.ActualizarProductoAsync(productoActual);
+            else
+                await ProductoService.CrearProductoAsync(productoActual);
+
+            mostrarModal = false;
+            await CargarProductos();
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ex.Message;
+        }
+    }
+
+    private void AbrirModalConfirmarEliminar(Producto prod)
+    {
+        productoAEliminar = prod;
+        mostrarModalEliminar = true;
+    }
+
+    private void CerrarModalEliminar()
+    {
+        mostrarModalEliminar = false;
+        productoAEliminar = null;
+    }
+
+    private async Task ConfirmarEliminacion()
+    {
+        if (productoAEliminar != null)
+        {
+            await ProductoService.EliminarProductoAsync(productoAEliminar.Id);
+            mostrarModalEliminar = false;
+            productoAEliminar = null;
+            await CargarProductos();
+        }
+    }
+}

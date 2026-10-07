@@ -1,0 +1,462 @@
+﻿@page "/compras"
+@using ProgramaLenceria.Application.Common.Interfaces
+@using ProgramaLenceria.Domain.Entities
+@inject ICompraService CompraService
+@inject IProveedorService ProveedorService
+@inject IProductoService ProductoService
+@rendermode InteractiveServer
+
+<PageTitle>Compras - Ingreso de Stock</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="fw-bold mb-0">Ingreso de Mercadería y Facturación de Compras</h3>
+        <small class="text-muted">Registro de compras a proveedores e incremento de stock</small>
+    </div>
+    <button class="btn btn-primary" @onclick="AbrirModalNuevaCompra">
+        <i class="bi bi-cart-plus-fill me-1"></i> + Registrar Nueva Compra
+    </button>
+</div>
+
+@if (compras == null)
+{
+    <p><em>Cargando historial de compras...</em></p>
+}
+else if (!compras.Any())
+{
+    <div class="alert alert-info">Aún no se han registrado compras ni ingresos de stock.</div>
+}
+else
+{
+    <table class="table table-hover align-middle">
+        <thead class="table-dark">
+            <tr>
+                <th style="width: 5%;"></th>
+                <th style="width: 18%;">Nº / Fecha</th>
+                <th style="width: 22%;">Proveedor</th>
+                <th style="width: 12%;">Nº Factura/Remito</th>
+                <th style="width: 10%;">Ítems</th>
+                <th style="width: 13%;">Total Compra ($)</th>
+                <th style="width: 10%;">Acción</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var c in compras)
+            {
+                var desplegada = comprasExpandidas.Contains(c.Id);
+
+                <!-- Fila Principal Clickable -->
+                <tr style="cursor: pointer; background-color: @(desplegada ? "#f8f9fa" : "inherit");"
+                    @onclick="() => ToggleDesplegar(c.Id)">
+                    <td class="text-center text-primary">
+                        <span class="fw-bold" style="font-size: 0.9rem;">@(desplegada ? "▼" : "▶")</span>
+                    </td>
+                    <td><strong>#@c.Id</strong> - <small class="text-muted">@c.Fecha.ToString("dd/MM/yyyy HH:mm")</small></td>
+                    <td><strong>@(c.Proveedor != null ? c.Proveedor.RazonSocial : "Proveedor General")</strong></td>
+                    <td>@(string.IsNullOrWhiteSpace(c.NumeroComprobante) ? "-" : c.NumeroComprobante)</td>
+                    <td><span class="badge bg-secondary">@c.Detalles.Count ítem(s)</span></td>
+                    <td class="fw-bold text-danger">$@c.Total.ToString("N2")</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-danger" @onclick:stopPropagation="true" @onclick="() => AbrirModalEliminarCompra(c)">
+                            Anular
+                        </button>
+                    </td>
+                </tr>
+
+                <!-- Fila Desplegable con el Detalle -->
+                @if (desplegada)
+                {
+                    <tr class="bg-light">
+                        <td colspan="7" class="p-3">
+                            <div class="card shadow-sm border-0 ms-4">
+                                <div class="card-header bg-secondary text-white py-1 px-3 small fw-bold">
+                                    Desglose de Mercadería Ingresada en Comprobante #@c.Id
+                                </div>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-bordered mb-0 text-center align-middle" style="font-size: 0.88rem;">
+                                        <thead class="table-light text-muted">
+                                            <tr>
+                                                <th class="text-start ps-3">Prenda / Modelo</th>
+                                                <th>Talle</th>
+                                                <th>Color</th>
+                                                <th>Cant. Ingresada</th>
+                                                <th>Costo Unit.</th>
+                                                <th>Subtotal</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var d in c.Detalles)
+                                            {
+                                                <tr>
+                                                    <td class="text-start ps-3 fw-bold">
+                                                        @(d.VarianteProducto?.Producto != null
+                                                            ? $"[{d.VarianteProducto.Producto.Marca}] {d.VarianteProducto.Producto.Nombre}"
+                                                            : "Prenda")
+                                                    </td>
+                                                    <td><span class="badge bg-light text-dark border">@(d.VarianteProducto?.Talle ?? "-")</span></td>
+                                                    <td>@(d.VarianteProducto?.Color ?? "-")</td>
+                                                    <td class="fw-bold text-primary">@d.Cantidad u.</td>
+                                                    <td>$@d.PrecioCostoUnitario.ToString("N2")</td>
+                                                    <td class="fw-bold text-danger">$@d.Subtotal.ToString("N2")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+@* ------------------- MODAL NUEVA COMPRA ------------------- *@
+@if (mostrarModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title">Registrar Ingreso de Stock / Factura de Compra</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CerrarModal"></button>
+                </div>
+                <div class="modal-body">
+
+                    @if (!string.IsNullOrEmpty(mensajeError))
+                    {
+                        <div class="alert alert-danger">@mensajeError</div>
+                    }
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-5">
+                            <label class="form-label fw-bold">Proveedor</label>
+                            <select class="form-select" @bind="nuevaCompra.ProveedorId">
+                                <option value="0">-- Seleccionar Proveedor --</option>
+                                @if (listaProveedores != null)
+                                {
+                                    @foreach (var prov in listaProveedores)
+                                    {
+                                        <option value="@prov.Id">@prov.RazonSocial @(string.IsNullOrWhiteSpace(prov.Telefono) ? "" : $"({prov.Telefono})")</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Nº Factura / Remito</label>
+                            <input type="text" class="form-control" @bind="nuevaCompra.NumeroComprobante" placeholder="Ej: FC-0001-000234" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Notas / Observaciones</label>
+                            <input type="text" class="form-control" @bind="nuevaCompra.Observaciones" placeholder="Ej: Pedido temporada verano..." />
+                        </div>
+                    </div>
+
+                    <hr />
+
+                    <!-- SELECTOR ACUMULATIVO DE PRODUCTOS -->
+                    <div class="card bg-light mb-3">
+                        <div class="card-body">
+                            <h6 class="card-title text-primary fw-bold mb-2">1. Seleccionar Producto para sumar a la compra</h6>
+                            <div class="row g-2 align-items-center">
+                                <div class="col-md-8">
+                                    <select class="form-select" value="@selectedProductoId" @onchange="OnProductoSelected">
+                                        <option value="0">-- Elegir producto para ingresar talles --</option>
+                                        @if (listaProductos != null)
+                                        {
+                                            @foreach (var prod in listaProductos)
+                                            {
+                                                <option value="@prod.Id">[@prod.Categoria] @prod.Marca @prod.Nombre</option>
+                                            }
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-md-4 text-muted small">
+                                    <em>Podés agregar varios productos sucesivamente.</em>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="fw-bold mb-0">2. Ítems a Ingresar</h6>
+                        @if (itemsCompraTemp.Any())
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => itemsCompraTemp.Clear()">
+                                Vaciar Lista
+                            </button>
+                        }
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered align-middle text-center">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 25%;">Prenda / Modelo</th>
+                                    <th style="width: 8%;">Talle</th>
+                                    <th style="width: 10%;">Color</th>
+                                    <th style="width: 14%;">Costo Docena ($)</th>
+                                    <th style="width: 13%;">Costo Unit. ($)</th>
+                                    <th style="width: 12%;">Stock Actual</th>
+                                    <th style="width: 12%;">Cant. Ingreso</th>
+                                    <th style="width: 6%;">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (!itemsCompraTemp.Any())
+                                {
+                                    <tr>
+                                        <td colspan="8" class="text-muted small py-4">
+                                            No hay prendas en la lista. Seleccioná un producto arriba para agregarlo a la compra.
+                                        </td>
+                                    </tr>
+                                }
+                                else
+                                {
+                                    @foreach (var item in itemsCompraTemp)
+                                    {
+                                        <tr>
+                                            <td class="text-start ps-2">
+                                                <small class="fw-bold">@item.NombreProducto</small>
+                                            </td>
+                                            <td><span class="badge bg-light text-dark border">@item.Talle</span></td>
+                                            <td>@item.Color</td>
+                                            <td>
+                                                <input type="number" step="0.01" class="form-control form-control-sm text-end"
+                                                       value="@item.CostoDocena"
+                                                       @onchange="(e) => ActualizarCostoDocena(item, e.Value)" placeholder="0.00" />
+                                            </td>
+                                            <td>
+                                                <input type="number" step="0.01" class="form-control form-control-sm text-end fw-bold"
+                                                       @bind="item.PrecioUnitarioCompra"
+                                                       @bind:after="() => item.CostoDocena = Math.Round(item.PrecioUnitarioCompra * 12, 2)" />
+                                            </td>
+                                            <td><span class="badge bg-secondary">@item.StockActual u.</span></td>
+                                            <td>
+                                                <input type="number" class="form-control form-control-sm text-center fw-bold text-success"
+                                                       @bind="item.Cantidad" min="0" />
+                                            </td>
+                                            <td>
+                                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => QuitarItemTemp(item)">
+                                                    ✕
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="text-end me-2 mt-2">
+                        <h5>Total de la Compra: <span class="text-danger fw-bold">$@CalcularTotalCompra().ToString("N2")</span></h5>
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CerrarModal">Cancelar</button>
+                    <button type="button" class="btn btn-success" @onclick="GuardarCompra">Confirmar Compra y Sumar Stock</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ------------------- MODAL CONFIRMAR ANULACIÓN ------------------- *@
+@if (mostrarModalEliminar && compraAEliminar != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Confirmar Anulación de Compra</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CerrarModalEliminar"></button>
+                </div>
+                <div class="modal-body">
+                    <p>¿Estás seguro de anular la compra <strong>#@compraAEliminar.Id</strong> por <strong>$@compraAEliminar.Total.ToString("N2")</strong>?</p>
+                    <div class="alert alert-warning small mb-0">
+                        ⚠️ Las cantidades ingresadas serán descontadas nuevamente del stock.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CerrarModalEliminar">Cancelar</button>
+                    <button type="button" class="btn btn-danger" @onclick="ConfirmarEliminacionCompra">Anular Compra y Descontar Stock</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private IEnumerable<Compra>? compras;
+    private IEnumerable<Proveedor>? listaProveedores;
+    private IEnumerable<Producto>? listaProductos;
+    private HashSet<int> comprasExpandidas = new();
+
+    private bool mostrarModal = false;
+    private string mensajeError = string.Empty;
+    private Compra nuevaCompra = new();
+    private int selectedProductoId = 0;
+
+    private bool mostrarModalEliminar = false;
+    private Compra? compraAEliminar;
+
+    private class ItemCompraVM
+    {
+        public int VarianteProductoId { get; set; }
+        public string NombreProducto { get; set; } = string.Empty;
+        public string Talle { get; set; } = string.Empty;
+        public string Color { get; set; } = string.Empty;
+        public int StockActual { get; set; }
+        public decimal CostoDocena { get; set; }
+        public decimal PrecioUnitarioCompra { get; set; }
+        public int Cantidad { get; set; } = 0;
+        public decimal Subtotal => Cantidad * PrecioUnitarioCompra;
+    }
+
+    private List<ItemCompraVM> itemsCompraTemp = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CargarDatos();
+    }
+
+    private async Task CargarDatos()
+    {
+        compras = await CompraService.ObtenerTodasAsync();
+        listaProveedores = await ProveedorService.ObtenerTodosAsync();
+        listaProductos = await ProductoService.ObtenerTodosAsync();
+    }
+
+    private void ToggleDesplegar(int compraId)
+    {
+        if (comprasExpandidas.Contains(compraId))
+            comprasExpandidas.Remove(compraId);
+        else
+            comprasExpandidas.Add(compraId);
+    }
+
+    private void AbrirModalNuevaCompra()
+    {
+        mensajeError = string.Empty;
+        nuevaCompra = new Compra
+            {
+                ProveedorId = 0,
+                Detalles = new List<DetalleCompra>()
+            };
+        itemsCompraTemp.Clear();
+        selectedProductoId = 0;
+        mostrarModal = true;
+    }
+
+    private void CerrarModal() => mostrarModal = false;
+
+    private void OnProductoSelected(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out int prodId) && prodId > 0)
+        {
+            var prod = listaProductos?.FirstOrDefault(p => p.Id == prodId);
+
+            if (prod != null && prod.Variantes.Any())
+            {
+                foreach (var v in prod.Variantes)
+                {
+                    if (!itemsCompraTemp.Any(i => i.VarianteProductoId == v.Id))
+                    {
+                        itemsCompraTemp.Add(new ItemCompraVM
+                            {
+                                VarianteProductoId = v.Id,
+                                NombreProducto = $"[{prod.Marca}] {prod.Nombre}",
+                                Talle = v.Talle,
+                                Color = v.Color,
+                                StockActual = v.StockActual,
+                                PrecioUnitarioCompra = v.PrecioCosto,
+                                CostoDocena = Math.Round(v.PrecioCosto * 12, 2),
+                                Cantidad = 0
+                            });
+                    }
+                }
+            }
+        }
+        selectedProductoId = 0;
+    }
+
+    private void ActualizarCostoDocena(ItemCompraVM item, object? val)
+    {
+        if (decimal.TryParse(val?.ToString(), out decimal docena) && docena > 0)
+        {
+            item.CostoDocena = docena;
+            item.PrecioUnitarioCompra = Math.Round(docena / 12m, 2);
+        }
+        else
+        {
+            item.CostoDocena = 0;
+            item.PrecioUnitarioCompra = 0;
+        }
+    }
+
+    private void QuitarItemTemp(ItemCompraVM item) => itemsCompraTemp.Remove(item);
+
+    private decimal CalcularTotalCompra() => itemsCompraTemp.Where(i => i.Cantidad > 0).Sum(i => i.Subtotal);
+
+    private async Task GuardarCompra()
+    {
+        try
+        {
+            mensajeError = string.Empty;
+
+            if (nuevaCompra.ProveedorId == 0)
+            {
+                mensajeError = "Debes seleccionar un proveedor para registrar la compra.";
+                return;
+            }
+
+            var itemsAIngresar = itemsCompraTemp.Where(i => i.Cantidad > 0).ToList();
+
+            if (!itemsAIngresar.Any())
+            {
+                mensajeError = "Debes ingresar al menos 1 unidad de mercadería.";
+                return;
+            }
+
+            nuevaCompra.Detalles = itemsAIngresar.Select(i => new DetalleCompra
+                {
+                    VarianteProductoId = i.VarianteProductoId,
+                    Cantidad = i.Cantidad,
+                    PrecioCostoUnitario = i.PrecioUnitarioCompra
+                }).ToList();
+
+            await CompraService.RegistrarCompraAsync(nuevaCompra);
+            mostrarModal = false;
+            await CargarDatos();
+        }
+        catch (Exception ex)
+        {
+            mensajeError = ex.Message;
+        }
+    }
+
+    private void AbrirModalEliminarCompra(Compra c)
+    {
+        compraAEliminar = c;
+        mostrarModalEliminar = true;
+    }
+
+    private void CerrarModalEliminar()
+    {
+        mostrarModalEliminar = false;
+        compraAEliminar = null;
+    }
+
+    private async Task ConfirmarEliminacionCompra()
+    {
+        if (compraAEliminar != null)
+        {
+            await CompraService.EliminarCompraAsync(compraAEliminar.Id);
+            mostrarModalEliminar = false;
+            compraAEliminar = null;
+            await CargarDatos();
+        }
+    }
+}

@@ -1,0 +1,17 @@
+## Compilación y binarios
+[Bb]in/
+[Oo]bj/
+.vs/
+
+## Base de datos SQLite y archivos temporales
+*.db
+*.db-shm
+*.db-wal
+
+## Perfiles de publicación con claves del hosting
+*.pubxml
+*.pubxml.user
+PublishProfiles/
+
+## Configuraciones con secretos locales
+appsettings.Production.json
